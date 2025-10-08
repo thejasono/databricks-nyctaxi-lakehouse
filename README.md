@@ -71,6 +71,18 @@ README.md                                  # This document
 
 ## Quick start (minimal happy path)
 
+### Code validation checklist
+
+Before running the production workloads, work through the following quick checks to confirm the repository content is ready for your workspace:
+
+1. **Notebooks open & run end-to-end** – Import `/unity/00_main_nyctaxi_catalogue_creator.ipynb`, `/notebooks/01_auto_loader_bronze.sql.ipynb`, and `/dlt/02_dlt_pipeline.sql.ipynb` into Databricks Repos. Use the **Format** button to ensure each cell renders, then run **Run All** in a dry-run workspace to surface any syntax or dependency issues.
+2. **Pipeline settings resolve** – In the DLT UI, attach `/dlt/pipeline_settings.json` to a test pipeline. Confirm that the referenced notebook path matches your repo location and that the JSON validates without manual edits.
+3. **SQL artifacts compile** – Open `/sql/03_gold_queries.sql` in a SQL Warehouse and run the statements with `USE CATALOG main_nyctaxi;` prepended. This verifies helper view definitions and Gold queries succeed against the expected schema names.
+4. **Monitoring script imports** – Execute `/monitoring/mlflow_demo.py` with `python monitoring/mlflow_demo.py --dry-run` (or wrap it in a Databricks notebook) to ensure `mlflow` is installed and the logging statements succeed.
+5. **Unity Catalog permissions** – After running the governance notebook, run `DESCRIBE CATALOG EXTENDED main_nyctaxi;` and `SHOW GRANTS ON CATALOG main_nyctaxi;` from a SQL Warehouse to confirm the catalog, schemas, and grants exist for both pipelines and analysts.
+
+When each step completes without error, you can proceed to the “Quick start” flow below with confidence that the assets are ready for production execution.
+
 1. **Create catalog & schemas**
    Open a **SQL Warehouse** and run: `/unity/00_main_nyctaxi_catalogue_creator.ipynb` (or import it as a SQL notebook and execu
    te all cells).
