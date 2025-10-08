@@ -1,0 +1,49 @@
+# Unity Catalog Setup Guide
+
+This directory contains assets that provision the Unity Catalog objects used by the NYC Taxi Lakehouse demo. The catalog provides the governance foundation for every downstream notebook, Delta Live Tables pipeline, and SQL dashboard. Use the notebook in this folder at the beginning of a new deployment so that all data engineering and analytics teams share the same controlled namespace.
+
+## Key Unity Catalog concepts
+
+* **Catalog** – The top-level namespace in Unity Catalog. A catalog groups related schemas, tables, views, and volumes under a
+  single governance boundary. Treat it like an environment or business domain (e.g., `main_nyctaxi`).
+* **Schema** – A container inside a catalog that organizes objects by purpose. Schemas often map to data layers (Bronze/Silver/
+  Gold) or subject areas. You address a schema with the two-part name `catalog.schema` (e.g., `main_nyctaxi.raw`).
+* **Table** – A managed dataset stored within a schema. Tables hold the rows that your pipelines produce or consume. You
+  reference them with a three-part name `catalog.schema.table` (e.g., `main_nyctaxi.mart.daily_kpis`).
+
+**How they differ:** Catalogs are the broadest security and organization boundary, schemas slice the catalog into logical
+workspaces, and tables contain the actual data. Grants cascade down—granting `USE CATALOG` lets a principal see schemas, while
+`USE SCHEMA` and object-level permissions control access to individual tables.
+
+### Databricks concepts reinforced here
+
+* **Governed namespaces** that separate environments and subject areas.
+* **Fine-grained permissions** using Unity Catalog grants instead of legacy table ACLs.
+* **External locations and volumes** as the bridge between object storage and Delta tables.
+* **Data lineage** that becomes visible once assets are created inside a catalog and consumed by downstream pipelines.
+
+## What the setup notebook does
+
+The notebook `00_main_nyctaxi_catalogue_creator.ipynb` (a SQL notebook you can run from a Warehouse, interactive cluster, or Workflows job) runs a short sequence of SQL commands that mirror best practices in a typical Databricks project:
+
+1. **Create a dedicated catalog** – Defines `main_nyctaxi` (or a name you choose) as the top-level container for all demo objects. In production, you would create one catalog per domain or environment to isolate data products and apply consistent governance.
+2. **Establish schemas for each layer** – Builds the `raw`, `ref`, and `mart` schemas. These map to the Bronze/Silver/Gold layers that the rest of the repo references. Separating schemas by layer keeps ingestion, curated reference data, and serving tables organized and easy to secure.
+3. **Grant access to principals** – Applies ownership and usage grants so pipelines, warehouses, and analysts can read and write to the appropriate schemas. In a real project you would tailor these grants to service principals, groups, or Unity Catalog roles aligned to your organization’s governance model.
+4. **Register storage locations (if needed)** – The notebook is structured to let you add `CREATE EXTERNAL LOCATION` statements when your data lands in cloud object storage. This is how Unity Catalog tracks and secures access to external data volumes in enterprise deployments.
+
+### Adapting the notebook to your environment
+
+* Replace `main_nyctaxi` with a catalog name that aligns to your business domain or environment (e.g., `prod_finance`).
+* Update the `GRANT` clauses to target Unity Catalog groups or service principals (for example, run `GRANT CREATE ON SCHEMA raw TO 'data_engineers'` if that group owns the ingestion layer).
+* Uncomment and populate the external location templates when ingesting from Amazon S3, Azure Data Lake Storage, or GCS.
+* If you rely on Unity Catalog Volumes, add `CREATE VOLUME` commands inside the appropriate schema so pipelines can read/write structured files.
+
+## How this fits into the broader project flow
+
+1. Run the Unity Catalog setup notebook first from a SQL warehouse or Databricks notebook to ensure the catalog and schemas exist.
+2. Once the catalog is in place, the ingestion notebooks (`/notebooks`) and Delta Live Tables pipeline (`/dlt`) can target the `raw`, `ref`, and `mart` schemas without additional manual configuration.
+3. BI and analytics consumers (e.g., `/sql/03_gold_queries.sql`) rely on the permissions established here to query materialized views and dashboards securely.
+4. Optional monitoring workflows (such as `/monitoring/mlflow_demo.py`) can also reference the same catalog, ensuring observability data stays in the governed Lakehouse environment.
+
+By capturing these steps in Unity Catalog, you establish the consistent, governed foundation that every mature Databricks project requires before ingestion, transformation, and analytics layers are deployed.
+
