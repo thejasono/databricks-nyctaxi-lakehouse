@@ -36,6 +36,13 @@ README.md                      # This document
 * **/monitoring** — *Observability.* Small MLflow script to log basic counts/quality metrics after runs.
 * **README.md** — *Runbook & orientation.* How to operate the project end-to-end.
 
+### Recommended walkthrough order
+
+1. Start in **`/unity/README.md`** to learn the catalog, schema, and table structure you will target throughout the project.
+2. Move to **`/notebooks`** to configure and run ingestion once the governance layer exists.
+3. Review **`/monitoring`** so you know how to track metrics and health before scaling the pipeline.
+4. Dive into **`/dlt`** last to understand how transformations and quality rules build on the earlier steps.
+
 ---
 
 ## Execution surfaces (who runs what)
