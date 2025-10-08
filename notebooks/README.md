@@ -12,10 +12,17 @@ This directory holds the interactive notebooks that seed the Bronze layer of the
   * `checkpoint_location` unique to your workspace so Auto Loader can track progress.
   * Target catalog/schema names that match the Unity setup (defaults use `main_nyctaxi.raw`).
 
+### Databricks concepts reinforced here
+
+* **Auto Loader** for incrementally streaming new files with schema inference and evolution.
+* **Volumes and external locations** for governed access to object storage.
+* **Streaming tables** that persist state so DLT can subscribe without additional orchestration.
+* **Job scheduling** when you wire the notebook into Workflows alongside the pipeline and monitoring steps.
+
 ## How these notebooks fit the overall flow
 
 1. **After Unity setup:** Run the notebook once Unity Catalog has the `main_nyctaxi` catalog and the `raw` schema. This guarantees writes succeed and respect governance controls.
-2. **Before DLT:** Successful Bronze ingestion provides the source table that `/dlt/02_dlt_pipeline.sql` expects for building Silver and Gold layers.
+2. **Before DLT:** Successful Bronze ingestion provides the source table that `/dlt/02_dlt_pipeline.sql.ipynb` expects for building Silver and Gold layers.
 3. **Re-running:** Because Auto Loader is incremental, subsequent runs pick up only new files. Resetting requires clearing the checkpoint and table manually—useful for demos that need a clean slate.
 
 ## Operational tips

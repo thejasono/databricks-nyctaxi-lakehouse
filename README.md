@@ -14,17 +14,17 @@ End-to-end lakehouse demo on Databricks:
 
 ```
 /unity
-  00_uc_setup.sql              # Catalog + schemas + grants (one-time platform setup)
+  00_main_nyctaxi_catalogue_creator.ipynb  # Catalog + schemas + grants (one-time platform setup)
 /notebooks
-  01_auto_loader_bronze.sql    # OPTIONAL: Auto Loader into Bronze from files
+  01_auto_loader_bronze.sql.ipynb          # OPTIONAL: Auto Loader into Bronze from files
 /dlt
-  pipeline_settings.json       # DLT/Lakeflow pipeline config
-  02_dlt_pipeline.sql          # Bronze→Silver→Gold (streaming tables + EXPECT + MVs)
+  pipeline_settings.json                   # DLT/Lakeflow pipeline config
+  02_dlt_pipeline.sql.ipynb                # Bronze→Silver→Gold (streaming tables + EXPECT + MVs)
 /sql
-  03_gold_queries.sql          # Ad-hoc BI queries & helper views
+  03_gold_queries.sql                      # Ad-hoc BI queries & helper views
 /monitoring
-  mlflow_demo.py               # MLflow logging of simple pipeline metrics
-README.md                      # This document
+  mlflow_demo.py                           # MLflow logging of simple pipeline metrics
+README.md                                  # This document
 ```
 
 ### What each folder is for
@@ -41,15 +41,28 @@ README.md                      # This document
 1. Start in **`/unity/README.md`** to learn the catalog, schema, and table structure you will target throughout the project.
 2. Move to **`/notebooks`** to configure and run ingestion once the governance layer exists.
 3. Review **`/monitoring`** so you know how to track metrics and health before scaling the pipeline.
-4. Dive into **`/dlt`** last to understand how transformations and quality rules build on the earlier steps.
+4. Dive into **`/dlt`** to understand how transformations and quality rules build on the earlier steps.
+5. Finish in **`/sql`** to see how analysts consume the Gold layer once the engineering pieces are in place.
+
+### Databricks concepts you will practice
+
+* **Workspace organization:** Import this repo into Databricks Repos so notebooks, SQL files, and scripts stay versioned together.
+* **Unity Catalog governance:** Build catalogs, schemas, tables, and permissions that isolate domains and enable fine-grained acc
+  ess.
+* **Incremental ingestion with Auto Loader:** Configure schema inference, checkpoints, and volumes/external locations.
+* **Delta Live Tables orchestration:** Author declarative pipelines with `LIVE TABLE` statements, expectations, and gold materia
+  lized views.
+* **Serverless SQL consumption:** Query Delta tables, publish dashboards, and materialize BI datasets with managed compute.
+* **Observability & MLflow:** Capture operational metrics, build health dashboards, and reason about data quality impacts.
+* **Workflows & Jobs:** Chain ingestion, DLT, and monitoring assets into an automated schedule to mimic production operations.
 
 ---
 
 ## Execution surfaces (who runs what)
 
 * **SQL Warehouse:** `/unity/*.sql`, `/sql/*.sql`
-* **Interactive Cluster or Job:** `/notebooks/01_auto_loader_bronze.sql` (if you use file ingest)
-* **DLT/Lakeflow Pipeline:** `/dlt/02_dlt_pipeline.sql` with `/dlt/pipeline_settings.json`
+* **Interactive Cluster or Job:** `/notebooks/01_auto_loader_bronze.sql.ipynb` (if you use file ingest)
+* **DLT/Lakeflow Pipeline:** `/dlt/02_dlt_pipeline.sql.ipynb` with `/dlt/pipeline_settings.json`
 * **Job/Notebook:** `/monitoring/mlflow_demo.py`
 
 ---
@@ -57,19 +70,20 @@ README.md                      # This document
 ## Quick start (minimal happy path)
 
 1. **Create catalog & schemas**
-   Open a **SQL Warehouse** and run: `/unity/00_uc_setup.sql`.
+   Open a **SQL Warehouse** and run: `/unity/00_main_nyctaxi_catalogue_creator.ipynb` (or import it as a SQL notebook and execu
+   te all cells).
 
 2. **Choose ONE Bronze source**
 
    * **Option A — Samples (lowest friction):**
-     *Skip* `/notebooks/01_auto_loader_bronze.sql`. In `/dlt/02_dlt_pipeline.sql`, use the `STREAM(samples.nyctaxi.trips)` variant for `raw.taxi_bronze`.
+     *Skip* `/notebooks/01_auto_loader_bronze.sql.ipynb`. In `/dlt/02_dlt_pipeline.sql.ipynb`, use the `STREAM(samples.nyctaxi.trips)` variant for `raw.taxi_bronze`.
    * **Option B — Auto Loader from files:**
-     Edit and run `/notebooks/01_auto_loader_bronze.sql` to point `cloud_files(...)` at your input location (DBFS mount/S3/ADLS). This creates `main_nyctaxi.raw.taxi_raw`. The DLT Bronze step then reads from that.
+     Edit and run `/notebooks/01_auto_loader_bronze.sql.ipynb` to point `cloud_files(...)` at your input location (DBFS mount/S3/ADLS). This creates `main_nyctaxi.raw.taxi_raw`. The DLT Bronze step then reads from that.
 
 3. **Create & run the pipeline**
 
    * In **Workflows → Pipelines**, create a pipeline.
-   * Use `/dlt/02_dlt_pipeline.sql` as the notebook/script.
+   * Use `/dlt/02_dlt_pipeline.sql.ipynb` as the notebook/script (export to `.sql` if you prefer a script file).
    * Set **Target** = `main_nyctaxi`.
    * Paste or attach `/dlt/pipeline_settings.json` (update the `"libraries"[0].notebook.path"` to your Repos path).
    * Use **Serverless** (Pro/Serverless required for Gold materialized views).
@@ -114,16 +128,16 @@ Files (S3/ADLS/DBFS) --(Auto Loader)--> raw.taxi_raw (Bronze, Delta)   [OPTIONAL
 
 ## File responsibilities (at a glance)
 
-* **/unity/00\_uc\_setup.sql**
+* **/unity/00\_main\_nyctaxi\_catalogue\_creator.ipynb**
   Creates `main_nyctaxi` and `raw/ref/mart` with basic grants. Run once per workspace or when reprovisioning.
 
-* **/notebooks/01\_auto\_loader\_bronze.sql** *(optional)*
+* **/notebooks/01\_auto\_loader\_bronze.sql.ipynb** *(optional)*
   Uses `cloud_files(...)` to incrementally ingest files to `main_nyctaxi.raw.taxi_raw` (Bronze). Edit the input path before running.
 
 * **/dlt/pipeline\_settings.json**
   Pipeline configuration (edition, channel, serverless, storage, target). Update the `"libraries".[0].notebook.path"` to your actual Repos path.
 
-* **/dlt/02\_dlt\_pipeline.sql**
+* **/dlt/02\_dlt\_pipeline.sql.ipynb**
   Declares **STREAMING TABLES** for Bronze/Silver, applies `EXPECT` rules, and defines **Gold** `mart.daily_kpis` as a **materialized view**.
 
 * **/sql/03\_gold\_queries.sql**
@@ -140,7 +154,7 @@ Files (S3/ADLS/DBFS) --(Auto Loader)--> raw.taxi_raw (Bronze, Delta)   [OPTIONAL
 
   * Spark/DBUtils: `/Volumes/main_nyctaxi/raw/nyctaxi_landing/...`
   * Databricks CLI: `dbfs:/Volumes/main_nyctaxi/raw/nyctaxi_landing/...`
-* **If using `cloud_files(...)`** with a DBFS mount or external storage, update the path in `/notebooks/01_auto_loader_bronze.sql` accordingly.
+* **If using `cloud_files(...)`** with a DBFS mount or external storage, update the path in `/notebooks/01_auto_loader_bronze.sql.ipynb` accordingly.
 
 ---
 
@@ -191,7 +205,8 @@ Run `/monitoring/mlflow_demo.py` after a pipeline run to log:
 
 * **“Both paths provided are local” when copying files:** ensure the destination starts with `dbfs:/...`.
 * **Materialized view not supported:** use a **Pro/Serverless** SQL warehouse (or run the MV inside the pipeline). Otherwise, convert the Gold object to a standard table/view.
-* **Permission errors (create/read):** re-run `/unity/00_uc_setup.sql` and verify grants to your principal (e.g., `account users`).
+* **Permission errors (create/read):** re-run `/unity/00_main_nyctaxi_catalogue_creator.ipynb` and verify grants to your princip
+  al (e.g., `account users`).
 * **No Bronze data:** confirm you picked exactly one Bronze source (Samples *or* Auto Loader) and that the chosen path/table exists.
 
 ---
@@ -212,6 +227,16 @@ Run `/monitoring/mlflow_demo.py` after a pipeline run to log:
 * **Unity Catalog:** Governance layer (catalogs, schemas, tables, volumes, permissions).
 * **Serverless SQL Warehouse:** Managed compute for low-latency SQL, supports materialized views.
 * **MLflow:** Tracking runs/metrics for models or pipelines.
+
+---
+
+## Extend your Databricks learning
+
+* Explore **Lakehouse Monitoring** for automated anomaly detection and SLA tracking on Delta tables.
+* Experiment with **Delta Sharing** to publish the Gold dataset to external consumers or partner accounts.
+* Add a **Feature Engineering** step (e.g., with the Databricks Feature Store) if you want to turn the Silver layer into ML-ready features.
+* Integrate **Unity Catalog Access Control Lists** with SCIM-provisioned groups to mirror enterprise governance models.
+* Use **dbt, Delta Live Tables SQL Warehousing, or Spark Structured Streaming** notebooks to compare declarative vs. code-first transformation styles.
 
 ---
 

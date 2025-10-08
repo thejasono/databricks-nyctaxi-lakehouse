@@ -15,14 +15,28 @@ This directory contains assets that provision the Unity Catalog objects used by 
 workspaces, and tables contain the actual data. Grants cascade down—granting `USE CATALOG` lets a principal see schemas, while
 `USE SCHEMA` and object-level permissions control access to individual tables.
 
+### Databricks concepts reinforced here
+
+* **Governed namespaces** that separate environments and subject areas.
+* **Fine-grained permissions** using Unity Catalog grants instead of legacy table ACLs.
+* **External locations and volumes** as the bridge between object storage and Delta tables.
+* **Data lineage** that becomes visible once assets are created inside a catalog and consumed by downstream pipelines.
+
 ## What the setup notebook does
 
-The notebook `00_main_nyctaxi_catalogue_creator.ipynb` runs a short sequence of SQL commands that mirror best practices in a typical Databricks project:
+The notebook `00_main_nyctaxi_catalogue_creator.ipynb` (a SQL notebook you can run from a Warehouse, interactive cluster, or Workflows job) runs a short sequence of SQL commands that mirror best practices in a typical Databricks project:
 
 1. **Create a dedicated catalog** – Defines `main_nyctaxi` (or a name you choose) as the top-level container for all demo objects. In production, you would create one catalog per domain or environment to isolate data products and apply consistent governance.
 2. **Establish schemas for each layer** – Builds the `raw`, `ref`, and `mart` schemas. These map to the Bronze/Silver/Gold layers that the rest of the repo references. Separating schemas by layer keeps ingestion, curated reference data, and serving tables organized and easy to secure.
 3. **Grant access to principals** – Applies ownership and usage grants so pipelines, warehouses, and analysts can read and write to the appropriate schemas. In a real project you would tailor these grants to service principals, groups, or Unity Catalog roles aligned to your organization’s governance model.
 4. **Register storage locations (if needed)** – The notebook is structured to let you add `CREATE EXTERNAL LOCATION` statements when your data lands in cloud object storage. This is how Unity Catalog tracks and secures access to external data volumes in enterprise deployments.
+
+### Adapting the notebook to your environment
+
+* Replace `main_nyctaxi` with a catalog name that aligns to your business domain or environment (e.g., `prod_finance`).
+* Update the `GRANT` clauses to target Unity Catalog groups or service principals (for example, run `GRANT CREATE ON SCHEMA raw TO 'data_engineers'` if that group owns the ingestion layer).
+* Uncomment and populate the external location templates when ingesting from Amazon S3, Azure Data Lake Storage, or GCS.
+* If you rely on Unity Catalog Volumes, add `CREATE VOLUME` commands inside the appropriate schema so pipelines can read/write structured files.
 
 ## How this fits into the broader project flow
 
