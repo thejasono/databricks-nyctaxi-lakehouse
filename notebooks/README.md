@@ -2,11 +2,13 @@
 
 This directory holds the interactive notebooks that seed the Bronze layer of the NYC Taxi Lakehouse demo. They are designed to be run after the Unity Catalog objects exist so that every Delta table lands in the governed `main_nyctaxi` catalog.
 
+At this stage of the deployment, the catalog defined in the `unity` folder is already in place, so these notebooks focus on creating the Bronze layer inside that governed namespace. In Databricks, the Bronze layer represents the raw-but-persisted landing zone that captures ingested files with minimal transformation so you can audit and replay source data. Spark acts as the distributed processing engine that reads batches or streams of source files, applies light normalization, and writes the results as Delta Lake tables. For this project, the Bronze layer gives the Delta Live Tables pipeline a reliable, replayable source of taxi trips while letting you track data quality issues before promoting records downstream. Delta tables provide ACID transactions, schema evolution, and time travel so the raw history remains queryable and consistent even as sources evolve.
+
 ## Notebooks in this folder
 
 ### `01_auto_loader_bronze.sql.ipynb`
-* **Purpose:** Streams raw NYC Taxi trip files into the Bronze Delta table that the Delta Live Tables pipeline consumes.
-* **When to use it:** Choose this path when you want to demonstrate Auto Loader’s incremental ingestion from cloud object storage. The notebook can run on an interactive or job cluster with a DBR that supports Auto Loader (11.3+ recommended).
+* **Purpose:** Streams raw NYC Taxi trip files into the Bronze Delta table that the Delta Live Tables pipeline consumes. In this context, a Delta table is a transactional storage layer on top of cloud object storage that combines the reliability of data warehouses with the scalability of data lakes.
+* **When to use it:** Choose this path when you want to demonstrate Auto Loader’s incremental ingestion from cloud object storage. Auto Loader is Databricks’ optimized file ingestion service that automatically detects new files, infers schema changes, and continuously processes data as it arrives from a bucket or container in services such as AWS S3, Azure Data Lake Storage, or Google Cloud Storage. The notebook can run on an interactive or job cluster with a DBR that supports Auto Loader (11.3+ recommended).
 * **Inputs to configure:**
   * `source_url` (cloud storage path or volume) pointing at the raw taxi files.
   * `checkpoint_location` unique to your workspace so Auto Loader can track progress.
@@ -32,3 +34,11 @@ This directory holds the interactive notebooks that seed the Bronze layer of the
 * Monitor the notebook run from the Jobs UI if you schedule it; long-running streams can continue appending data for real-time demos.
 
 By working through these notebooks, you establish the Bronze ingestion layer that powers the downstream Delta Live Tables transformations, SQL queries, and monitoring workflows in the rest of the repository.
+
+## Additional context you might find useful
+
+* **Naming conventions help downstream automation.** Keeping table names aligned to the pattern `catalog.schema.table` (for example, `main_nyctaxi.raw.taxi_autoloader_bronze`) makes it easier to parameterize the DLT pipeline and SQL dashboards without brittle string substitutions.
+* **Expect schema drift and late-arriving files.** Auto Loader automatically tracks new columns and backfilled data, but you should still review the schema evolution metrics after each run to confirm that unexpected attributes don’t require remediation before Silver processing.
+* **Checkpoint hygiene matters.** Store checkpoints in Unity Catalog Volumes or secure object storage paths with lifecycle policies so that repeated demo runs don’t accumulate stale metadata or leak into production environments.
+* **Validate Bronze outputs with sample queries.** Running quick aggregate checks (row counts by date, min/max timestamps) from a SQL Warehouse ensures the ingested data matches expectations before you trigger Silver/Gold transformations.
+* **Document data quality contracts early.** If the downstream teams expect specific columns or SLAs, capture them now in the Bronze layer notebook markdown so future contributors know what guarantees the ingestion job is responsible for.
