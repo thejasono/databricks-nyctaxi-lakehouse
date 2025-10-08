@@ -2,23 +2,31 @@
 
 This directory contains the assets that operationalize the Silver and Gold transformation layers for the NYC Taxi Lakehouse demo. After the Bronze ingestion notebooks populate `main_nyctaxi.raw`, these resources let you declaratively define expectations, manage incremental processing, and publish curated tables for downstream analytics without hand-building orchestration.
 
-At this point in the end-to-end flow, the Unity Catalog objects are already provisioned and the Auto Loader notebook has delivered a continuously updating Bronze table. Delta Live Tables (DLT) uses those raw Delta files as a streaming source, enforcing data quality rules while writing new datasets into governed schemas. DLT runs on Databricks-managed compute so you can focus on declarative transformations and business SLAs instead of cluster plumbing. Because the output tables are Delta, you retain ACID transactions, time travel, and schema enforcement across the full medallion architecture.
+At this point in the end-to-end flow, the Unity Catalog objects are already provisioned and the Auto Loader notebook has delivered a continuously updating Bronze table. **Delta Live Tables (DLT)** is a Databricks-managed service that lets you declare data pipelines as code; DLT continuously reads the raw Delta tables, applies your logic, and materializes new Delta outputs while managing infrastructure for you. DLT runs on Databricks-managed compute so you can focus on **declarative transformations**—describing *what* you want to happen instead of writing step-by-step execution code—and on business **service-level agreements (SLAs)**—the contractual targets for refresh cadence, latency, and data quality—rather than on cluster plumbing. Because the output tables are **Delta tables** (the open data format that combines Apache Parquet storage with Delta Lake transaction logs), you retain:
+
+* **ACID transactions:** Atomic, Consistent, Isolated, Durable writes that protect readers from partial updates.
+* **Time travel:** The ability to query older table versions for auditing or rollbacks.
+* **Schema enforcement and evolution:** Automatic checks that block unexpected columns or let you explicitly evolve schemas.
+
+These guarantees are crucial because they keep data trustworthy across the Bronze → Silver → Gold medallion layers (a layered design that progressively refines raw data into curated, analytics-ready datasets), even as upstream data streams in continuously.
 
 ## Assets in this folder
 
 ### `02_dlt_pipeline.sql.ipynb`
 * **Purpose:** Defines the entire DLT pipeline, including expectations, table dependencies, and materialized views that move data from `raw` to curated `ref` and `mart` schemas.
-* **When to use it:** Attach this notebook to a DLT pipeline (Workflows → Pipelines) or a Lakeflow project whenever you want an automated, continuously updating transformation layer fed by the Bronze ingestion job. It works for both triggered and continuous pipelines.
+* **When to use it:** Attach this notebook to a DLT pipeline (Workflows → Pipelines) or a Lakeflow project whenever you want an automated, continuously updating transformation layer fed by the Bronze ingestion job. It works for both triggered (batch-style) and continuous (always-on) pipelines.
 * **Inputs to configure:**
   * Pipeline storage location (for checkpoints and system tables).
   * Target catalog/schema names that match the Unity setup (`main_nyctaxi.ref` and `main_nyctaxi.mart`).
-  * Optional configuration for refresh schedules, expectations severity, and CDC options.
+  * Optional configuration for refresh schedules, expectations severity, and change data capture (CDC) options.
 
 ### How the DLT notebook works end to end
 
-The notebook declares a Bronze streaming table sourced from the Auto Loader output, applies expectations to filter or quarantine bad records, and produces clean Silver tables (`trips_valid`, reference dimensions) plus Gold materialized views for daily KPIs. Because DLT manages lineage, each table’s definition references upstream datasets with simple `CREATE OR REFRESH STREAMING TABLE` statements. Expectations such as `EXPECT trip_distance > 0` enforce quality and populate SLA dashboards automatically.
+The notebook declares a Bronze streaming table sourced from the Auto Loader output, applies expectations to filter or quarantine bad records, and produces clean Silver tables (`trips_valid`, reference dimensions) plus Gold materialized views for daily KPIs. Because DLT manages **lineage**—the complete record of which upstream tables and transformations produced a dataset—each table’s definition references upstream datasets with simple `CREATE OR REFRESH STREAMING TABLE` statements. Expectations such as `EXPECT trip_distance > 0` enforce quality and populate SLA dashboards automatically.
 
-When the pipeline runs, Databricks provisions a managed cluster that ingests new Bronze data, writes change data to Silver, and refreshes the Gold aggregates. DLT’s built-in monitoring captures event logs, expectation metrics, and throughput so you can validate every batch or micro-batch without additional instrumentation.
+When the pipeline runs, Databricks provisions a managed **cluster**—a set of compute resources managed by Databricks that execute the transformations—that ingests new Bronze data, writes change data to Silver, and refreshes the Gold aggregates. DLT’s built-in monitoring captures event logs, expectation metrics, and throughput so you can validate every batch or micro-batch without additional instrumentation.
+
+> **Why the notebook is “run by the pipeline”:** DLT interprets the notebook as pipeline code. You do not execute this notebook directly in a SQL warehouse or interactively like a standard notebook run. Instead, you create a DLT pipeline in Workflows (or Lakeflow), attach this notebook as the pipeline’s sole notebook task, and DLT orchestrates the execution whenever the pipeline runs. Think of a DLT pipeline as a managed DAG (directed acyclic graph) where each table/view definition is a node; the notebook defines the DAG, and the DLT service schedules and manages it automatically. Once configured, the pipeline can run on a schedule, in response to data arrivals, or on demand without manual intervention.
 
 ### `pipeline_settings.json`
 * **Purpose:** Provides a template configuration for the pipeline, covering cluster settings, continuous mode, target catalog, storage locations, and notebook libraries.
