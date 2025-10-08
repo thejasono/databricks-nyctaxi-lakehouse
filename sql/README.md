@@ -2,6 +2,31 @@
 
 This folder packages the SQL workflows that showcase the **Gold** layer of the NYC Taxi Lakehouse demo once the upstream Unity Catalog, ingestion notebook, and Delta Live Tables (DLT) pipeline have finished running. At this stage of the implementation, the curated tables in `main_nyctaxi.mart` (or whatever catalog/schema names you created) are already populated with clean, reliable taxi metrics. The statements here let data analysts and dashboard builders explore those assets directly from a Databricks SQL Warehouse—ideally Serverless for the fastest cold-starts—without needing to manage clusters or write ad-hoc data engineering code.
 
+The Gold layer itself is defined inside the DLT SQL notebook (`/dlt/02_dlt_pipeline.sql.ipynb`). There, the pipeline creates a Delta materialized view that sits on top of the validated Silver table so it can refresh incrementally as new taxi trips land:
+
+```sql
+-- GOLD: BI aggregates as MVs (eligible on Pro/Serverless SQL or inside the pipeline).
+-- Gold tables summarize Silver data for business intelligence. Here we build
+-- a materialized view so DLT (or Databricks SQL) maintains the aggregation incrementally
+-- each time new trips arrive. Materialized views persist their results in Delta storage
+-- refresh automatically, and expose history/time travel like any Delta table—
+-- they are more than a one-time snapshot.
+-- `LIVE.ref.trips_valid` keeps dependency tracking intact so the pipeline refresh order
+-- and lineage graphs show Bronze → Silver → Gold relationships.
+CREATE OR REPLACE MATERIALIZED VIEW mart.daily_kpis AS
+SELECT
+  pickup_date,
+  COUNT(*)                           AS trip_count,
+  ROUND(AVG(fare_amount), 2)         AS avg_fare,
+  ROUND(AVG(trip_distance), 3)       AS avg_trip_miles,
+  ROUND(SUM(fare_amount), 2)         AS total_revenue,
+  ROUND(SUM(fare_amount) / NULLIF(SUM(trip_distance), 0), 3) AS revenue_per_mile
+FROM LIVE.ref.trips_valid
+GROUP BY pickup_date;
+```
+
+When that DLT pipeline run completes, you can switch to Databricks SQL and execute the curated queries in this folder to consume the same Gold layer objects that power the demo dashboards.
+
 Because the tables remain Delta-backed, every query benefits from the same **ACID guarantees**, **schema enforcement**, and **time travel** features that protected data quality through the Bronze → Silver → Gold medallion journey. The SQL assets simply surface those curated results through business-friendly aggregations and drill-downs so you can convert them into dashboards, alerts, or downstream data sharing products.
 
 ## Files in this folder
@@ -12,6 +37,29 @@ Because the tables remain Delta-backed, every query benefits from the same **ACI
 * **Inputs to configure:**
   * Catalog and schema names that match your Unity Catalog deployment (defaults assume `main_nyctaxi.mart`).
   * Optional dashboard parameters (date ranges, vendor filters) if you wire the statements into visualizations.
+
+Key snippets inside the notebook illustrate both the ad-hoc consumption pattern and deeper validation workflows. For example:
+
+```sql
+%sql
+-- Ad-hoc queries against GOLD.
+USE CATALOG main_nyctaxi;
+USE SCHEMA mart;
+
+-- Time series for dashboarding.
+SELECT pickup_date, trip_count, avg_fare, avg_trip_miles, total_revenue, revenue_per_mile
+FROM daily_kpis
+ORDER BY pickup_date;
+
+-- QA: most expensive sub-5 mile trips.
+SELECT pickup_date, vendor_id, trip_distance, fare_amount, pickup_zip, dropoff_zip
+FROM main_nyctaxi.ref.trips_valid
+WHERE trip_distance < 5 AND fare_amount > 50
+ORDER BY fare_amount DESC
+LIMIT 50;
+```
+
+These commands reinforce the practice of setting the correct catalog/schema, querying the Gold materialized view for BI-friendly KPIs, and then diving back to Silver tables when deeper anomaly investigations are required.
 
 ## How the SQL workflow plays out end to end
 
