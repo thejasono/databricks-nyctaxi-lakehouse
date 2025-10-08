@@ -2,23 +2,37 @@
 
 This directory contains the assets that operationalize the Silver and Gold transformation layers for the NYC Taxi Lakehouse demo. After the Bronze ingestion notebooks populate `main_nyctaxi.raw`, these resources let you declaratively define expectations, manage incremental processing, and publish curated tables for downstream analytics without hand-building orchestration.
 
-At this point in the end-to-end flow, the Unity Catalog objects are already provisioned and the Auto Loader notebook has delivered a continuously updating Bronze table. Delta Live Tables (DLT) uses those raw Delta files as a streaming source, enforcing data quality rules while writing new datasets into governed schemas. DLT runs on Databricks-managed compute so you can focus on declarative transformations and business SLAs instead of cluster plumbing. Because the output tables are Delta, you retain ACID transactions, time travel, and schema enforcement across the full medallion architecture.
+At this point in the end-to-end flow, the Unity Catalog objects are already provisioned and the Auto Loader notebook has delivered a continuously updating Bronze table. **Delta Live Tables (DLT)** is a Databricks-managed service that lets you declare data pipelines as code; DLT continuously reads the raw Delta tables, applies your logic, and materializes new Delta outputs while managing infrastructure for you. DLT runs on Databricks-managed compute so you can focus on **declarative transformations**—describing *what* you want to happen instead of writing step-by-step execution code—and on business **service-level agreements (SLAs)**—the contractual targets for refresh cadence, latency, and data quality—rather than on cluster plumbing. Because the output tables are **Delta tables** (the open data format that combines Apache Parquet storage with Delta Lake transaction logs), you retain:
+
+* **ACID transactions:** Atomic, Consistent, Isolated, Durable writes that protect readers from partial updates.
+* **Time travel:** The ability to query older table versions for auditing or rollbacks.
+* **Schema enforcement and evolution:** Automatic checks that block unexpected columns or let you explicitly evolve schemas.
+
+These guarantees are crucial because they keep data trustworthy across the Bronze → Silver → Gold medallion layers (a layered design that progressively refines raw data into curated, analytics-ready datasets), even as upstream data streams in continuously.
 
 ## Assets in this folder
 
 ### `02_dlt_pipeline.sql.ipynb`
 * **Purpose:** Defines the entire DLT pipeline, including expectations, table dependencies, and materialized views that move data from `raw` to curated `ref` and `mart` schemas.
-* **When to use it:** Attach this notebook to a DLT pipeline (Workflows → Pipelines) or a Lakeflow project whenever you want an automated, continuously updating transformation layer fed by the Bronze ingestion job. It works for both triggered and continuous pipelines.
+* **When to use it:** Attach this notebook to a DLT pipeline (Workflows → Pipelines) or a Lakeflow project whenever you want an automated, continuously updating transformation layer fed by the Bronze ingestion job. It works for both triggered (batch-style) and continuous (always-on) pipelines.
 * **Inputs to configure:**
   * Pipeline storage location (for checkpoints and system tables).
   * Target catalog/schema names that match the Unity setup (`main_nyctaxi.ref` and `main_nyctaxi.mart`).
-  * Optional configuration for refresh schedules, expectations severity, and CDC options.
+  * Optional configuration for refresh schedules, expectations severity, and change data capture (CDC) options.
 
 ### How the DLT notebook works end to end
 
-The notebook declares a Bronze streaming table sourced from the Auto Loader output, applies expectations to filter or quarantine bad records, and produces clean Silver tables (`trips_valid`, reference dimensions) plus Gold materialized views for daily KPIs. Because DLT manages lineage, each table’s definition references upstream datasets with simple `CREATE OR REFRESH STREAMING TABLE` statements. Expectations such as `EXPECT trip_distance > 0` enforce quality and populate SLA dashboards automatically.
+The notebook declares the classic Bronze → Silver → Gold medallion flow and relies on DLT to orchestrate it:
 
-When the pipeline runs, Databricks provisions a managed cluster that ingests new Bronze data, writes change data to Silver, and refreshes the Gold aggregates. DLT’s built-in monitoring captures event logs, expectation metrics, and throughput so you can validate every batch or micro-batch without additional instrumentation.
+* **Pipeline orchestration, not ad-hoc SQL:** Within Delta Live Tables you attach this notebook as the pipeline’s single task; DLT parses every statement, materializes the dependency graph, and schedules streaming or triggered runs on managed clusters. Executing the notebook in a SQL warehouse would only run the SQL one time. Running it as a pipeline keeps the DAG on a recurring schedule with checkpointing, lineage tracking, and SLA monitoring handled by the service.
+* **Bronze (choose one source):** The pipeline treats Bronze as the raw landing zone. Pick exactly one option based on how you ingested the taxi data. Option A reads from the Auto Loader output (`main_nyctaxi.raw.taxi_raw`) created in `/notebooks/01_auto_loader_bronze.sql.ipynb`. Option B is a quick-start path that streams from the shared `samples.nyctaxi.trips` dataset and optionally enforces a basic distance expectation inline.
+* **Silver (typing + pruning):** Typing means casting raw strings into strongly typed `TIMESTAMP`, `INT`, and `DOUBLE` columns so downstream logic benefits from schema enforcement. Pruning filters out obviously bad or irrelevant records—here any trip missing distance or fare—before they reach refined consumers. The resulting curated stream lives in the Unity Catalog schema `ref` and references `LIVE.raw.taxi_bronze`, which tells DLT to pull the managed Bronze output so lineage stays intact.
+* **Expectations on the curated stream:** A second `CREATE OR REFRESH STREAMING TABLE` hardens the Silver output with declarative expectations such as `vendor_id IS NOT NULL` and `fare_amount >= 0`. Rows that fail are dropped (or could be quarantined by changing the expectation severity), giving you an auditable quality gate before publishing to Gold. This table also resides in `ref` and continues to use the `LIVE.` prefix for dependency tracking.
+* **Gold materialized view:** Business-facing aggregations live in the `mart` schema. The materialized view `mart.daily_kpis` summarizes revenue and ridership metrics from `LIVE.ref.trips_valid`. Materialized views persist their results in Delta storage, refresh incrementally as new data arrives, and expose time travel/history just like any Delta table—they are more than a single snapshot.
+
+Because DLT manages **lineage**—the complete record of which upstream tables and transformations produced a dataset—each table’s definition references upstream datasets with `LIVE.` semantics so the service can visualize Bronze → Silver → Gold dependencies and orchestrate refresh order automatically.
+
+When the pipeline runs, Databricks provisions a managed **cluster**—a set of compute resources managed by Databricks that execute the transformations—that ingests new Bronze data, writes change data to Silver, and refreshes the Gold aggregates. DLT’s built-in monitoring captures event logs, expectation metrics, and throughput so you can validate every batch or micro-batch without additional instrumentation.
 
 ### `pipeline_settings.json`
 * **Purpose:** Provides a template configuration for the pipeline, covering cluster settings, continuous mode, target catalog, storage locations, and notebook libraries.
