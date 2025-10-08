@@ -8,6 +8,8 @@ End-to-end lakehouse demo on Databricks:
 * **Consumption:** Serverless SQL (queries, dashboards, materialized views).
 * **Observability:** MLflow metrics.
 
+Looking for a reusable guide when starting fresh? See the [Databricks project checklist](docs/databricks-project-checklist.md) for a step-by-step reminder of the key setup, ingestion, transformation, and governance tasks.
+
 ---
 
 ## Repository layout
