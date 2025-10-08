@@ -14,6 +14,14 @@ At this stage of the deployment, the catalog defined in the `unity` folder is al
   * `checkpoint_location` unique to your workspace so Auto Loader can track progress.
   * Target catalog/schema names that match the Unity setup (defaults use `main_nyctaxi.raw`).
 
+### How the Bronze notebook works end to end
+
+After the Unity setup provisions the `main_nyctaxi` catalog, this notebook immediately switches to that catalog and its empty `raw` schema before creating a streaming Delta table named `taxi_raw`. That table is backed by Auto Loader, so Spark Structured Streaming jobs continuously ingest newly arrived files from the configured object storage path (for example, an S3 bucket) and append them to the Bronze table without manual intervention. Because the table is declared as streaming, Spark keeps it synchronized with the landing zone, ensuring the Bronze layer stays current for downstream transformations.
+
+The `TBLPROPERTIES` block mirrors the recommended configuration for Delta Live Tables pipelines. Settings such as `pipelines.autoOptimize.managed = true` instruct Databricks to automatically compact small files and optimize storage layout over time. These options do not change the schema or the storage location, but they do keep the ingestion layer efficient even as data volumes grow.
+
+Conceptually, `main_nyctaxi.raw.taxi_raw` is the Bronze landing zone for this project. It preserves raw, unmodeled taxi trip data as Delta files so that later Silver and Gold pipelines can cleanse, enrich, and publish curated datasets for analytics, dashboards, and monitoring workloads. The Unity Catalog provides the governance boundary, the `raw` schema acts as the staging area, and the Auto Loader–driven streaming table delivers the continuously updating foundation that powers the rest of the Lakehouse demo.
+
 ### Databricks concepts reinforced here
 
 * **Auto Loader** for incrementally streaming new files with schema inference and evolution.
