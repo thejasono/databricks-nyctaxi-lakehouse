@@ -2,6 +2,19 @@
 
 This directory contains assets that provision the Unity Catalog objects used by the NYC Taxi Lakehouse demo. The catalog provides the governance foundation for every downstream notebook, Delta Live Tables pipeline, and SQL dashboard. Use the notebook in this folder at the beginning of a new deployment so that all data engineering and analytics teams share the same controlled namespace.
 
+## Key Unity Catalog concepts
+
+* **Catalog** – The top-level namespace in Unity Catalog. A catalog groups related schemas, tables, views, and volumes under a
+  single governance boundary. Treat it like an environment or business domain (e.g., `main_nyctaxi`).
+* **Schema** – A container inside a catalog that organizes objects by purpose. Schemas often map to data layers (Bronze/Silver/
+  Gold) or subject areas. You address a schema with the two-part name `catalog.schema` (e.g., `main_nyctaxi.raw`).
+* **Table** – A managed dataset stored within a schema. Tables hold the rows that your pipelines produce or consume. You
+  reference them with a three-part name `catalog.schema.table` (e.g., `main_nyctaxi.mart.daily_kpis`).
+
+**How they differ:** Catalogs are the broadest security and organization boundary, schemas slice the catalog into logical
+workspaces, and tables contain the actual data. Grants cascade down—granting `USE CATALOG` lets a principal see schemas, while
+`USE SCHEMA` and object-level permissions control access to individual tables.
+
 ## What the setup notebook does
 
 The notebook `00_main_nyctaxi_catalogue_creator.ipynb` runs a short sequence of SQL commands that mirror best practices in a typical Databricks project:
