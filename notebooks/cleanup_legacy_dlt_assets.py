@@ -2,15 +2,17 @@
 """Utility notebook to reset the NYCTaxi Delta Live Tables pipeline before enabling Unity Catalog."""
 
 # COMMAND ----------
+# MAGIC %sql
 # MAGIC -- Clean up the legacy objects that live in hive_metastore
 # MAGIC USE CATALOG hive_metastore;
-# MAGIC 
+# MAGIC
 # MAGIC -- Optional: inspect the existing tables to understand what will be dropped
 # MAGIC SHOW TABLES IN raw;
 # MAGIC SHOW TABLES IN ref;
 # MAGIC SHOW TABLES IN mart;
 
 # COMMAND ----------
+# MAGIC %sql
 # MAGIC -- Drop the managed tables and views left by the earlier pipeline runs
 # MAGIC DROP TABLE IF EXISTS raw.taxi_bronze;
 # MAGIC DROP TABLE IF EXISTS ref.trips_clean;
@@ -18,11 +20,13 @@
 # MAGIC DROP MATERIALIZED VIEW IF EXISTS mart.daily_kpis;
 
 # COMMAND ----------
+# MAGIC %sql
 # MAGIC -- Remove any ad hoc raw tables that may reference the same storage
 # MAGIC DROP TABLE IF EXISTS raw.taxi_raw;
 # MAGIC DROP TABLE IF EXISTS raw.trips_sample;
 
 # COMMAND ----------
+# MAGIC %sql
 # MAGIC -- Confirm that the schemas no longer contain pipeline artifacts
 # MAGIC SHOW TABLES IN raw;
 # MAGIC SHOW TABLES IN ref;
