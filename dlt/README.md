@@ -20,7 +20,8 @@ These guarantees are crucial because they keep data trustworthy across the Bronz
 * **When to use it:** Attach this notebook to a DLT pipeline (Workflows → Pipelines) or a Lakeflow project whenever you want an automated, continuously updating transformation layer fed by the Bronze ingestion job. It works for both triggered (batch-style) and continuous (always-on) pipelines.
 * **Inputs to configure:**
   * Pipeline storage location (for checkpoints and system tables).
-  * Target catalog/schema names that match the Unity setup (`main_nyctaxi.ref` and `main_nyctaxi.mart`).
+  * Unity Catalog routing (`"catalog": "main_nyctaxi"` in the settings JSON) plus the default schema (`"target": "ref"`).
+  * Explicit schema-qualified table names in the SQL (`raw.taxi_bronze`, `ref.trips_valid`, `mart.daily_kpis`).
   * Optional configuration for refresh schedules, expectations severity, and change data capture (CDC) options.
 
 ### How the DLT notebook works end to end

@@ -7,7 +7,8 @@
   "libraries": [
     { "notebook": { "path": "/Repos/<your-user-or-path>/dlt/02_dlt_pipeline.sql.ipynb" } }
   ],
-  "target": "main_nyctaxi",
+  "catalog": "main_nyctaxi",
+  "target": "ref",
   "storage": "dbfs:/pipelines/nyctaxi",
   "serverless": true
 }
