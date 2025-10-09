@@ -23,3 +23,22 @@ No changes required for alignment between Notebook 01 and Notebook 02.
   will only execute the statements once. When the notebook is registered as the
   pipeline task, Delta Live Tables manages the continuous/triggered runs,
   handles dependency resolution, and enforces expectations automatically.
+- To create the pipeline in the UI:
+  1. Navigate to **Workflows → Delta Live Tables** and select **Create
+     pipeline** (or **Workflows → Jobs → Create job** if you prefer the Jobs
+     view, then add a task whose type is **Delta Live Tables pipeline**).
+  2. Provide any friendly **Pipeline name** (for example,
+     `NYC Taxi DLT Bronze-Silver`). In the Jobs view this field is labelled
+     **Task name**. The value is for your reference only and does not have to
+     match the notebook file name.
+  3. For **Source**, keep **Workspace** when you are pointing at a Repo path.
+     With that source selected, set **Path** to the notebook inside your Repo,
+     e.g. `/Repos/<user>/databricks-nyctaxi-lakehouse/dlt/02_dlt_pipeline.sql`.
+     Databricks detects it as a Delta Live Tables pipeline because of the task
+     type you chose.
+  4. Leave **Dependent libraries** and **Parameters** empty unless you have
+     custom requirements.
+  5. Choose your **Compute** option (such as **Serverless** or a classic
+     cluster policy) and finish configuring the pipeline settings (target
+     catalog, storage location, schedule/trigger, etc.) before clicking
+     **Create**.
