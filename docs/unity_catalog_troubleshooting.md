@@ -15,7 +15,7 @@ As soon as the pipeline is redeployed with the catalog property set to `main_nyc
 ## Resolution
 Because Unity Catalog cannot move existing Delta Live Tables assets between catalogs, the pipeline (and the managed tables it created) must be reset before enabling the catalog:
 
-1. **Clean up the old managed tables** – In Databricks SQL or a notebook, drop the previous pipeline tables and views in the old catalog (for example `DROP TABLE IF EXISTS hive_metastore.raw.taxi_bronze;`, `DROP TABLE IF EXISTS hive_metastore.ref.trips_clean;`, etc.). Refer to the lightweight reset checklist in [`notebooks/hard_reset_guide.py`](../notebooks/hard_reset_guide.py) to perform these steps manually.
+1. **Clean up the old managed tables** – In Databricks SQL or a notebook, drop the previous pipeline tables and views in the old catalog (for example `DROP TABLE IF EXISTS hive_metastore.raw.taxi_bronze;`, `DROP TABLE IF EXISTS hive_metastore.ref.trips_clean;`, etc.). To run the end-to-end SQL reset workflow (including dropping Unity Catalog objects and clearing storage paths), open [`notebooks/hard_reset_automation.sql`](../notebooks/hard_reset_automation.sql) and execute each cell in order after updating the parameters.
 2. **Reset or recreate the pipeline** – Either delete and recreate the pipeline in the UI or run it with a new pipeline ID/storage path so it does not reuse the metadata stored for the original run.
 3. **Re-run after cleanup** – Once the old tables are gone, the Unity Catalog-qualified statements can create fresh managed objects directly in `main_nyctaxi`, and the deployment will succeed.
 
