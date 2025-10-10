@@ -2,35 +2,50 @@
 """Utility notebook to reset the NYCTaxi Delta Live Tables pipeline before enabling Unity Catalog."""
 
 # COMMAND ----------
-# MAGIC %sql
-# MAGIC -- Clean up the legacy objects that live in hive_metastore
-# MAGIC USE CATALOG hive_metastore;
-# MAGIC
-# MAGIC -- Optional: inspect the existing tables to understand what will be dropped
-# MAGIC SHOW TABLES IN raw;
-# MAGIC SHOW TABLES IN ref;
-# MAGIC SHOW TABLES IN mart;
+# Clean up the legacy objects that live in catalogs that may hold pipeline state.
+# The script now works whether the classic Hive Metastore is enabled or the
+# workspace only uses Unity Catalog.  It attempts to clean both catalogs and
+# skips any that are unavailable.
 
 # COMMAND ----------
-# MAGIC %sql
-# MAGIC -- Drop the managed tables and views left by the earlier pipeline runs
-# MAGIC DROP TABLE IF EXISTS raw.taxi_bronze;
-# MAGIC DROP TABLE IF EXISTS ref.trips_clean;
-# MAGIC DROP TABLE IF EXISTS ref.trips_valid;
-# MAGIC DROP MATERIALIZED VIEW IF EXISTS mart.daily_kpis;
+from pyspark.sql.utils import AnalysisException
 
-# COMMAND ----------
-# MAGIC %sql
-# MAGIC -- Remove any ad hoc raw tables that may reference the same storage
-# MAGIC DROP TABLE IF EXISTS raw.taxi_raw;
-# MAGIC DROP TABLE IF EXISTS raw.trips_sample;
 
-# COMMAND ----------
-# MAGIC %sql
-# MAGIC -- Confirm that the schemas no longer contain pipeline artifacts
-# MAGIC SHOW TABLES IN raw;
-# MAGIC SHOW TABLES IN ref;
-# MAGIC SHOW TABLES IN mart;
+def _clean_catalog(catalog: str) -> None:
+    """Drop the Delta Live Tables artifacts inside ``catalog`` if it exists."""
+
+    try:
+        spark.sql(f"USE CATALOG {catalog}")
+    except AnalysisException as exc:  # pragma: no cover - executed in Databricks
+        message = getattr(exc, "desc", str(exc))
+        if "UC_HIVE_METASTORE_DISABLED_EXCEPTION" in message or "Catalog does not exist" in message:
+            print(f"Skipping catalog '{catalog}' because it is not available: {message}")
+            return
+        raise
+
+    print(f"Cleaning catalog '{catalog}'...")
+
+    print("Existing tables in raw/ref/mart before cleanup (if any):")
+    spark.sql("SHOW TABLES IN raw").show(truncate=False)
+    spark.sql("SHOW TABLES IN ref").show(truncate=False)
+    spark.sql("SHOW TABLES IN mart").show(truncate=False)
+
+    spark.sql("DROP TABLE IF EXISTS raw.taxi_bronze")
+    spark.sql("DROP TABLE IF EXISTS ref.trips_clean")
+    spark.sql("DROP TABLE IF EXISTS ref.trips_valid")
+    spark.sql("DROP MATERIALIZED VIEW IF EXISTS mart.daily_kpis")
+
+    spark.sql("DROP TABLE IF EXISTS raw.taxi_raw")
+    spark.sql("DROP TABLE IF EXISTS raw.trips_sample")
+
+    print("Remaining tables in raw/ref/mart after cleanup:")
+    spark.sql("SHOW TABLES IN raw").show(truncate=False)
+    spark.sql("SHOW TABLES IN ref").show(truncate=False)
+    spark.sql("SHOW TABLES IN mart").show(truncate=False)
+
+
+for catalog_name in ["hive_metastore", "main_nyctaxi"]:
+    _clean_catalog(catalog_name)
 
 # COMMAND ----------
 # Clean up the Delta Live Tables storage path that preserves pipeline metadata.
