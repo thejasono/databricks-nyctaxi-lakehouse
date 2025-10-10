@@ -51,3 +51,13 @@ SHOW TABLES IN mart;
 ```
 
 In addition to the SQL cleanup, remove the Delta Live Tables storage directory (`dbfs:/pipelines/nyctaxi` by default) or set a brand-new storage path when you recreate the pipeline. This prevents the new deployment from reusing metadata that still references the `hive_metastore` catalog.
+
+### When artifacts refuse to go away
+
+If you cannot drop the legacy objects because of catalog permissions or external retention policies, resist the temptation to simply rename the existing project. Renaming alone leaves the same underlying storage paths and table names in place, so the pipeline will still encounter the cross-catalog migration error on the next run. Instead:
+
+1. **Escalate the cleanup** – Ask a Unity Catalog administrator to run the SQL drop statements above (or the [`notebooks/hard_reset_automation.sql`](../notebooks/hard_reset_automation.sql) notebook) with elevated privileges so the old managed tables are actually removed.
+2. **Provision a fresh storage location** – If administrators cannot clear the objects, configure the pipeline to use a brand-new `storage` path and unique table names. This effectively creates a greenfield deployment that avoids the leftover Delta artifacts.
+3. **Rename only after isolation** – You may rename the pipeline or project for clarity, but only after the pipeline points to clean storage locations. Treat renaming as a cosmetic step; it cannot replace the required cleanup.
+
+Following these steps ensures you do not inherit the stale Unity Catalog artifacts while keeping the migration path aligned with Databricks best practices.
