@@ -9,6 +9,8 @@
 -- MAGIC * `legacy_catalog` – Catalog that contains the legacy managed tables (typically `hive_metastore`).
 -- MAGIC * `storage_path` – DBFS or cloud storage path backing the pipeline (`dbfs:/pipelines/nyctaxi` by default).
 -- MAGIC * `volume_name` – Optional fully qualified Unity Catalog volume name that stores pipeline artifacts.
+-- MAGIC
+-- MAGIC The cells below automatically skip Unity Catalog cleanup steps when the catalog has already been removed.
 
 -- COMMAND ----------
 -- MAGIC %sql
@@ -50,25 +52,45 @@
 
 -- COMMAND ----------
 -- MAGIC %sql
--- MAGIC -- Drop Unity Catalog objects associated with the refreshed deployment.
--- MAGIC USE CATALOG ${pipeline_catalog};
--- MAGIC SHOW TABLES IN ${bronze_schema};
--- MAGIC SHOW TABLES IN ${silver_schema};
--- MAGIC SHOW TABLES IN ${gold_schema};
--- MAGIC DROP TABLE IF EXISTS ${bronze_schema}.taxi_bronze;
--- MAGIC DROP TABLE IF EXISTS ${silver_schema}.trips_clean;
--- MAGIC DROP TABLE IF EXISTS ${silver_schema}.trips_valid;
--- MAGIC DROP MATERIALIZED VIEW IF EXISTS ${gold_schema}.daily_kpis;
--- MAGIC DROP TABLE IF EXISTS ${bronze_schema}.taxi_raw;
--- MAGIC DROP TABLE IF EXISTS ${bronze_schema}.trips_sample;
+-- MAGIC -- Drop Unity Catalog objects only when the pipeline catalog still exists.
+-- MAGIC EXECUTE IMMEDIATE (
+-- MAGIC   SELECT CASE
+-- MAGIC     WHEN catalog_exists = 0 THEN CONCAT('SELECT "Catalog ', '${pipeline_catalog}', ' not found. Skipping pipeline object cleanup." AS message')
+-- MAGIC     ELSE CONCAT(
+-- MAGIC       'USE CATALOG ', '${pipeline_catalog}', '; ',
+-- MAGIC       'DROP TABLE IF EXISTS ', '${pipeline_catalog}', '.', '${bronze_schema}', '.taxi_bronze; ',
+-- MAGIC       'DROP TABLE IF EXISTS ', '${pipeline_catalog}', '.', '${silver_schema}', '.trips_clean; ',
+-- MAGIC       'DROP TABLE IF EXISTS ', '${pipeline_catalog}', '.', '${silver_schema}', '.trips_valid; ',
+-- MAGIC       'DROP MATERIALIZED VIEW IF EXISTS ', '${pipeline_catalog}', '.', '${gold_schema}', '.daily_kpis; ',
+-- MAGIC       'DROP TABLE IF EXISTS ', '${pipeline_catalog}', '.', '${bronze_schema}', '.taxi_raw; ',
+-- MAGIC       'DROP TABLE IF EXISTS ', '${pipeline_catalog}', '.', '${bronze_schema}', '.trips_sample; '
+-- MAGIC     )
+-- MAGIC   END
+-- MAGIC   FROM (
+-- MAGIC     SELECT COUNT(*) AS catalog_exists
+-- MAGIC     FROM system.information_schema.catalogs
+-- MAGIC     WHERE catalog_name = '${pipeline_catalog}'
+-- MAGIC   )
+-- MAGIC );
 
 -- COMMAND ----------
 -- MAGIC %sql
 -- MAGIC -- Drop entire schemas if they should be recreated during the next deployment.
--- MAGIC USE CATALOG ${pipeline_catalog};
--- MAGIC DROP SCHEMA IF EXISTS ${bronze_schema} CASCADE;
--- MAGIC DROP SCHEMA IF EXISTS ${silver_schema} CASCADE;
--- MAGIC DROP SCHEMA IF EXISTS ${gold_schema} CASCADE;
+-- MAGIC EXECUTE IMMEDIATE (
+-- MAGIC   SELECT CASE
+-- MAGIC     WHEN catalog_exists = 0 THEN CONCAT('SELECT "Catalog ', '${pipeline_catalog}', ' not found. Skipping schema cleanup." AS message')
+-- MAGIC     ELSE CONCAT(
+-- MAGIC       'DROP SCHEMA IF EXISTS ', '${pipeline_catalog}', '.', '${bronze_schema}', ' CASCADE; ',
+-- MAGIC       'DROP SCHEMA IF EXISTS ', '${pipeline_catalog}', '.', '${silver_schema}', ' CASCADE; ',
+-- MAGIC       'DROP SCHEMA IF EXISTS ', '${pipeline_catalog}', '.', '${gold_schema}', ' CASCADE'
+-- MAGIC     )
+-- MAGIC   END
+-- MAGIC   FROM (
+-- MAGIC     SELECT COUNT(*) AS catalog_exists
+-- MAGIC     FROM system.information_schema.catalogs
+-- MAGIC     WHERE catalog_name = '${pipeline_catalog}'
+-- MAGIC   )
+-- MAGIC );
 
 -- COMMAND ----------
 -- MAGIC %sql
@@ -77,8 +99,18 @@
 
 -- COMMAND ----------
 -- MAGIC %sql
--- MAGIC -- Remove Unity Catalog volume artifacts if the pipeline uses a UC volume for storage.
--- MAGIC DROP VOLUME IF EXISTS ${volume_name};
+-- MAGIC -- Remove Unity Catalog volume artifacts only when the volume still exists.
+-- MAGIC EXECUTE IMMEDIATE (
+-- MAGIC   SELECT CASE
+-- MAGIC     WHEN volume_exists = 0 THEN CONCAT('SELECT "Volume ', '${volume_name}', ' not found. Skipping volume cleanup." AS message')
+-- MAGIC     ELSE CONCAT('DROP VOLUME IF EXISTS ', '${volume_name}', ';')
+-- MAGIC   END
+-- MAGIC   FROM (
+-- MAGIC     SELECT COUNT(*) AS volume_exists
+-- MAGIC     FROM system.information_schema.volumes
+-- MAGIC     WHERE full_name = '${volume_name}'
+-- MAGIC   )
+-- MAGIC );
 
 -- COMMAND ----------
 -- MAGIC %sql
