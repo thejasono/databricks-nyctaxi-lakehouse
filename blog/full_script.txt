@@ -1,0 +1,354 @@
+Building a Modern Databricks Lakehouse: A Hands-On Primer (DLT, Unity Catalog & Data Contracts)
+In this walkthrough, we build a Databricks lakehouse for the NYC Taxi dataset, demonstrating how to ingest data, enforce quality, and derive business metrics, all on a unified platform. We'll cover both the "how" and the "why": what Databricks is doing under the hood, and how the medallion architecture (Bronze → Silver → Gold) is implemented in practice using the databricks-nyctaxi-lakehouse repository.
+By the end, you will be able to:
+Configure Unity Catalog (catalogs, schemas, and permissions) for the specific repo.
+Choose a single Bronze ingestion path.
+Run the Delta Live Tables (DLT / Lakeflow) pipeline from Bronze → Silver → Gold.
+Query Gold tables in Databricks SQL.
+Optionally log basic pipeline metrics to MLflow for observability.
+
+0. View the Code on GitHub
+All code, notebooks, and configurations for this lakehouse project are available in the public repository:
+👉 View the full project on GitHub
+The repo contains Unity Catalog setup, ingestion notebooks, the DLT pipeline, validation SQL, and a monitoring script.
+You will also need to download the NYC Taxi Trip Records dataset and upload it to Databricks. Use the official NYC Taxi & Limousine Commission dataset and select any Yellow Taxi Trip Records (Parquet) files from 2020–2025. The specific month you choose does not matter.
+👉Link Here
+1. Understanding the Databricks Lakehouse
+Before we run the project, it helps to map Databricks to the "typical company data environment" most data engineers inherit. A typical company data stack has several moving parts:
+1. Data Sources
+Operational databases (e.g., Postgres/MySQL), SaaS systems (e.g., Salesforce, Stripe), logs, and sometimes event streams (e.g., Kafka/Kinesis).
+These systems generate data in multiple shapes: structured tables, semi-structured JSON, files, and events.
+2. A landing / raw zone (usually on object storage)
+Raw data is commonly landed in cloud object storage (S3 / ADLS / GCS). Object storage is a cloud storage system designed to store large amounts of data as files ("objects"), rather than as rows in database tables. Teams use it because it is cheap, highly scalable, and can store any format (CSV, JSON, Parquet, images, logs, etc.). 
+3. Table Layer:
+To make data in object storage usable for analytics and downstream processing, a table layer is added on top using open table formats such as Delta Lake, Iceberg, or Hudi. Its purpose is to turn raw files in storage into reliable, queryable tables. Instead of treating object storage as "just a folder of files" (for example, months of JSON transaction data), the table layer adds transactional metadata and schema rules so the data behaves like a database table: consistent queries, enforced and evolvable schemas, and reliable reads and writes.
+Interlude: The Medallion Architecture (Bronze → Silver → Gold)
+Once you have a table layer, you still need a consistent way to organize tables. In Databricks, many pipelines follow the Medallion Architecture, which improves data quality and usability in stages:
+i. Bronze (Raw): A direct copy of your raw data (CSVs, JSON, logs) loaded into a Delta table. Minimal transformation; you mainly capture and preserve the input. If downstream transformations or business logic change, you can replay from Bronze without going back to the source system.
+ii. Silver (Cleansed & Conformed): This is where data is cleaned and standardized: types are fixed (e.g., timestamps are actual timestamps), records are deduplicated, and quality rules are enforced (e.g., "fare_amount ≥ 0"). Silver is commonly treated as the main clean layer that downstream analytics and ML build on.
+iii. Gold (Curated/Aggregated): Business-facing tables for reporting and consumption. Silver data is shaped into metrics (e.g., "daily revenue by cab type") that are ready for dashboards and common queries. Gold is typically more read-optimized and more opinionated (aligned to business definitions) than Silver.
+4. Metadata + Governance (Catalog/Metastore):
+Metadata tracks what tables in the table layer exist, their schemas, where they physically live in storage, and who is allowed to access them. The full repository of metadata is known as the metastore or catalog. In Databricks, Unity Catalog provides this function: the metastore is the top-level container that registers metadata for data and AI assets and enforces the permissions that govern access to them.
+5. Compute to transform data (batch and/or streaming):
+Compute is the execution layer of a data system: the CPU, memory, and runtime processes that actually execute code to read data, apply transformations, and write results. In Databricks, this compute is primarily provided by Apache Spark running on clusters. Spark is used to clean, standardize, join, and aggregate raw data from object storage into curated table-layer datasets that can be queried by downstream consumers.
+This compute runs on clusters (multiple machines working in parallel) rather than a single virtual machine, which allows Databricks to process large datasets efficiently in both batch and streaming workloads.
+6. Orchestration + monitoring
+Pipelines need scheduling, dependency management, retries, alerting, and audit logs (what ran, when, and what happened). Common external tools include Airflow and Dagster; Databricks also provides native surfaces for this (Jobs/Workflows and DLT/Lakeflow pipelines).
+7. A serving/analytics layer
+This is where analysts and BI tools query curated datasets (often Silver/Gold). Many teams call this "the warehouse," even if the data still lives in object storage (for example, queried through Databricks SQL).
+In practice, teams assemble these pieces either as managed cloud services or self-hosted services.
+2. How Does This All Run and Function Together?
+The surrounding services (catalog, orchestration, monitoring) can run in a few different ways: as managed cloud services, on virtual machines, or as containerized workloads. Kubernetes is one common way to run containerized services at scale, but it is not required for a data environment to be distributed - distribution comes from the compute engine and storage architecture, not from Kubernetes itself.
+Example (a simple Kubernetes-based setup)
+Imagine a small UK bike retailer that runs most internal systems on Kubernetes. Their website and inventory services are containerized, but if we zoom in specifically on the data environment, it would look something like this:
+Sources: orders/customers in Postgres; inventory events; web analytics; ad spend exports; optional event stream.
+Storage: raw extracts land in object storage.
+Tables: raw becomes Bronze; cleaned/conformed becomes Silver; business aggregates become Gold (implemented via a table format like Delta/Iceberg/Hudi).
+Catalog: tracks tables, schemas, locations, permissions.
+Compute: Spark/SQL transforms and updates tables (batch or streaming).
+Orchestration: schedules and monitors ingestion + transformations.
+Serving: curated Silver/Gold tables are queried by analysts/Power BI via a SQL endpoint.
+
+Where Databricks Comes in
+Databricks bundles and manages much of the stack you would otherwise assemble yourself - table/storage format, distributed compute, pipeline execution, governance, and the SQL serving surface - into one platform, built around Apache Spark, Delta Lake, Delta Live Tables, and Unity Catalog.
+Delta Lake (storage + tables)
+Delta Lake is the open table format used by Databricks for Bronze/Silver/Gold tables. The table data lives as files in cloud object storage (S3/ADLS/GCS), and Delta Lake's transaction log records changes so you get database-like reliability (ACID transactions, versioning/time travel).
+Ingestion tooling (getting data into Bronze)
+Databricks provides ingestion components that standardize common ingestion patterns. Auto Loader is a common example: incremental file ingestion from cloud storage into a Bronze table (new files are picked up automatically, schema evolution can be handled, and ingestion state is tracked so you do not reprocess the same files repeatedly). In this project, Auto Loader is one Bronze option; the other option is ingesting from an existing table/source already present in the environment.
+Apache Spark (distributed compute)
+Apache Spark is the distributed compute engine that performs ingestion and transformations. This is where clusters come in: Spark distributes work across multiple machines so you can process large datasets in parallel (batch and streaming). Depending on workspace configuration, compute can run on user-managed clusters or Databricks-managed/serverless compute.
+Delta Live Tables (DLT)
+Delta Live Tables (DLT) is Databricks' managed pipeline framework. Instead of hard-coding execution order ("run step 1, then step 2"), you define the target tables and their derivations. The platform infers and executes the Bronze → Silver → Gold dependency graph. 
+- Databricks builds and runs this graph, manages incremental processing - meaning only new or changed data is processed on each run, with state and progress tracked via checkpoints where applicable - and enforces data quality expectations as part of the pipeline definition.
+Expectation actions are explicitly configured: 
+-Fail update (stop the pipeline)
+-Drop row (exclude invalid records)
+-Log only (record violations while continuing processing)
+Unity Catalog (governance + metadata)
+Unity Catalog is the governance and metadata layer: it defines catalogs and schemas, stores table metadata, and enforces permissions (who can read/write what). Conceptually, it replaces a standalone metastore/catalog and centralizes access control across workspaces and compute.
+Databricks SQL (serving/analytics)
+Databricks SQL (via SQL Warehouses) is the serving surface for fast SQL queries over governed Delta tables. Unity Catalog governs what you can see and do; Databricks SQL is the query endpoint analysts and dashboards use to access curated Silver/Gold datasets. Key point: in Databricks, "warehouse" usually refers to the SQL warehouse (a compute endpoint), while the data itself lives in governed Delta tables.
+
+Putting it together (one end-to-end flow)
+Ingest into Bronze Delta tables → transform into Silver/Gold Delta tables using Spark + managed pipelines → serve curated tables through Databricks SQL, with Unity Catalog enforcing governance and providing metadata across the environment.
+Same Kubernetes Example With Databricks Instead
+If we take the same UK bike retailer, the external sources do not change (e-commerce DB, inventory DB, web/ad/support systems, optional Kafka/Kinesis streams). What changes is that Databricks becomes the central platform that standardizes how those pieces are operationalized:
+Landing (object storage)+ Bronze: raw data still lands in S3/ADLS/GCS, but ingestion writes into Bronze Delta tables (often using Auto Loader for incremental file pickup).
+Table layer: data is modeled as Delta Lake tables across Bronze → Silver → Gold (raw → cleaned/conformed → business aggregates).
+Governance: Unity Catalog stores table metadata and enforces permissions (e.g., analysts query Gold but not raw PII in Bronze).
+Compute + orchestration: transformations run as Spark jobs on Databricks, operationalized via Jobs/Workflows and/or Delta Live Tables (part of Lakeflow pipelines).
+Serving: analysts and BI tools query curated tables through Databricks SQL using a SQL warehouse (compute endpoint), with Unity Catalog controlling access.
+
+Net effect: the retailer still has external sources and object storage, but Databricks consolidates the operational pieces into one governed workflow aligned to the same Bronze/Silver/Gold lifecycle.
+3. Is Databricks Low Code?
+Strictly speaking: yes and no.
+It is not "low code" in the sense that you can avoid programming. For non-trivial pipelines you still write SQL, and often Python/Scala for transformations, validation, testing, and integration. What Databricks reduces is operational friction: you spend less time wiring infrastructure, and more time on data logic. It standardizes and automates common concerns like compute provisioning, autoscaling, incremental execution patterns, and pipeline/job monitoring.
+Example pipeline (very typical)
+Source A: clickstream events (streaming)
+Source B: orders/customers in Postgres (batch or CDC)
+Goal: daily metrics (conversion, revenue by category, drop-off pages) with basic quality rules (required IDs, valid timestamps, no negative revenue)
+
+Traditional approach (many components)
+In a traditional stack, this pipeline is usually built by assembling and operating a toolchain such as:
+Kafka or Kinesis for clickstream ingestion
+Debezium or custom jobs for Postgres CDC
+Object storage (S3 / ADLS / GCS) for raw data
+Spark jobs for transformations
+A table format (Delta / Iceberg / Hudi) configured and managed manually
+Airflow or Dagster for orchestration and dependencies
+A metastore or catalog for table metadata
+Separate data-quality checks (custom code or a framework)
+A warehouse or query engine for BI access
+
+Each tool does its job, but all integration points are owned by the team: IAM and networking, schema and state management, retries and backfills, upgrades, observability, and failure handling across systems. This typically results in slower delivery and significantly higher operational overhead, in exchange for greater flexibility and direct ownership of the stack.
+Databricks approach (same outcome, fewer moving parts)
+Databricks consolidates most of that into platform features: ingestion (Auto Loader/streaming), transformations (Spark SQL + Python), managed pipelines (Delta Live Tables as part of Lakeflow pipelines + Jobs), storage (Delta Bronze/Silver/Gold), governance (Unity Catalog), and serving (Databricks SQL).
+So you get simpler operations, but you have to accept Databricks' conventions and managed abstractions.
+4. Why do I need to know this?
+Databricks is widely deployed in industry, and familiarity with it maps directly onto real work: ingestion patterns, medallion layering, governance, incremental processing, and serving curated datasets to analytics. Databricks has stated that over 60% of the Fortune 500 use platform in some capacity, and it reports over 20,000 organizations as customers.
+Even when you are not working in Databricks, the core ideas it packages (Spark-based distributed compute, table formats like Delta, centralized catalogs/governance, declarative pipeline graphs) are the same ideas you will encounter across modern data platforms. Knowing how the platform abstracts a "typical company data environment" makes it easier to drop into new environments, diagnose problems, and deliver work without spending weeks rebuilding basic infrastructure understanding.
+5. How Does Apache Spark Work With Databricks?
+As mentioned in prior posts, Apache Spark is a distributed compute engine designed to process large datasets in parallel across a cluster. In Databricks, most workloads ultimately execute as Spark jobs on Databricks-managed compute.
+Databricks does not run "vanilla Spark" by default. It runs Databricks Runtime, which includes Apache Spark plus platform-level optimizations for usability, performance, and security. On the performance side, some workloads can also use Photon, a Databricks-native vectorized engine that accelerates many SQL and DataFrame operations while remaining compatible with Spark APIs.
+Those Spark jobs run on compute you choose in a few common modes:
+- All-purpose clusters: interactive exploration (notebooks, ad-hoc analysis).
+- Job clusters: production runs (created for a job, then terminated).
+- Serverless compute (if enabled): Databricks abstracts cluster management further.
+Why is this important? Cost, runtime, and failure behavior are determined by the compute mode and how long that compute stays alive. 
+For example, consider a daily batch pipeline that prepares revenue and customer metrics for finance and leadership reporting. If this pipeline runs on an all-purpose cluster, compute can remain active outside the actual processing window, increasing cost without adding value. Running the same pipeline on a job cluster or serverless compute ensures resources exist only while the Spark job is executing, reducing waste and improving cost predictability.
+6. Now Let's Ground This in a Real Project
+Now that you understand Databricks components (Delta Lake for storage, Spark for compute, Unity Catalog for governance, and DLT for managed pipelines), the next step is a hands-on exercise. We will run a complete lakehouse pipeline using a real dataset.
+The project repository is organized to separate core responsibilities into dedicated folders. 
+Repo map (folder responsibilities)
+/unity/ - Unity Catalog bootstrap and access control. 00_main_nyctaxi_catalogue_creator.ipynb (and its .py export) creates the main_nyctaxi catalog, defines the raw, ref, and mart schemas, and applies grants. The folder also includes templates for external locations and volumes.
+/notebooks/ - Bronze ingestion entrypoint. 01_copy_into_bronze.sql.ipynb uses batch ingestion using COPY INTO in order to load raw taxi files into the Bronze Delta table (and can optionally seeds from samples.nyctaxi.trips).
+/dlt/ - Batch Silver/Gold transformations.  02_dlt_pipeline.sql.ipynb defines the Bronze → Silver → Gold logic and data quality expectations, rebuilding raw.taxi_bronze, ref.trips_clean, ref.trips_valid, and mart.daily_kpis.
+/sql/ - Gold-layer validation and analytics queries. 
+03_gold_queries.sql.ipynb (and its .sql export) contains validation checks and example analytical queries executed from a SQL Warehouse against mart.daily_kpis and related tables.
+/monitoring/ - lightweight observability. mlflow_demo.py logs row counts, freshness, and simple quality signals from the Silver layer to MLflow after each batch run.
+README.md - Runbook and execution checklist tying the workflow together.
+
+How to Run It
+Import the repo into Databricks Repos. In your Databricks workspace, go to Workspace → Repos → Add Repo (Git) and clone databricks-nyctaxi-lakehouse. You should see the project under Workspace/Repos/….
+Run the Unity Catalog bootstrap (required). Open /unity/00_main_nyctaxi_catalogue_creator.ipynb and run all cells. This step:
+- Creates the main_nyctaxi catalog
+- Creates the raw, ref, and mart schemas
+- Creates the storage volume used as the landing zone for raw NYC Taxi files
+- Applies the required permissions
+This establishes the governed namespace and the physical landing location for raw data.
+Upload the NYC Taxi dataset to the landing volume 
+Go to the Catalog tab in Databricks and select the main_nyctaxi catalog.
+You should now see the raw, ref, and mart schemas, along with the storage volume created by the bootstrap notebook.
+Upload the NYC Taxi Parquet files into the volume:
+main_nyctaxi.raw.nyctaxi_landing
+This makes the raw files available to Spark under Unity Catalog governance and allows them to be ingested into the Bronze layer.
+Ingest raw data into Bronze (Auto Loader / batch ingestion):
+Run
+/notebooks/01_copy_into_bronze.sql.ipynb
+This notebook performs batch ingestion using COPY INTO, loading the raw Parquet files from the landing volume into:
+main_nyctaxi.raw.taxi_raw
+Batch ingestion here means:
+- Files are loaded explicitly in one operation
+- No streaming state or incremental file tracking is maintained
+- Re-running the notebook reloads data based on the COPY INTO semantics
+This produces the Bronze raw table used by downstream transformations.
+Execute the Silver/Gold pipeline logic (manual DLT execution)
+Run
+/dlt/02_dlt_pipeline.sql.ipynb
+Because this project uses the Databricks Free Edition, we cannot create or configure managed DLT (Lakeflow) pipelines via the Pipelines UI.
+Instead:
+- The DLT SQL notebook is executed manually as a standard Spark SQL workload
+- The Bronze → Silver → Gold logic runs end-to-end in notebook form
+- The same SQL definitions can later be deployed unchanged as a managed Lakeflow pipeline in a paid workspace using pipeline_settings.json
+This step materializes:
+- ref.trips_clean
+- ref.trips_valid
+- ref.daily_kpis
+Validate and query Gold Outputs:
+Run
+/sql/03_gold_queries.sql.ipynb
+This notebook executes validation checks and example analytical queries against the Gold layer.
+ These are the queryable outputs that BI and analytics teams would use downstream.
+Log metrics to MLflow. 
+For basic validation and observability, run
+/monitoring/mlflow_demo.py
+This script:
+- Logs silver_rows
+- Logs counts of data-quality dervied from the DLT event log
+- Writes metrics to Mlflow for inspection across runs
+
+Note: this notebook does not configure access grants by default. Update the following line in 02_dlt_pipeline.sql.ipynb with your own account email:
+GRANT ALL PRIVILEGES ON SCHEMA main_nyctaxi.raw TO `enter_your_email_here`
+Note: 02_dlt_pipeline.sql.ipynb uses fully qualified table names under main_nyctaxi.raw, main_nyctaxi.ref, and main_nyctaxi.mart. If you want to use a different catalog or schema, you must update the table references in the notebook as well as dlt/pipeline_settings.json-changing the JSON target alone will not redirect outputs when running the notebook manually.
+7. Project Artifacts & Unity Catalog Objects
+Now that the pipeline has run, we can do a quick tour of Unity Catalog to see the artifacts. If any of these are missing, use the notes below to pinpoint where the failure occurred.
+1. Governance Objects
+Catalog: main_nyctaxi
+Schemas: main_nyctaxi.raw, main_nyctaxi.ref, main_nyctaxi.mart
+Verification: If these are missing, the Unity Catalog bootstrap notebook (00_main_nyctaxi_catalogue_creator) did not run or complete successfully.
+
+2. Bronze Layer (Raw Landing)
+Table: main_nyctaxi.raw.taxi_bronze
+What it is
+ The Bronze Delta table created by executing the DLT SQL logic in
+ 02_dlt_pipeline.sql.ipynb. In the Free Edition, this table is created by running the notebook manually, not by a managed pipeline.
+Verification
+ If this table is missing or empty:
+- Check that raw data was successfully ingested into main_nyctaxi.raw.taxi_raw
+- Re-run the ingestion notebook (01_copy_into_bronze.sql.ipynb)
+- Re-run 02_dlt_pipeline.sql.ipynb
+Table (ingestion only): main_nyctaxi.raw.taxi_raw
+What it is
+ The raw landing Delta table populated from Parquet files via batch ingestion (COPY INTO). This table is the input to the Bronze transformation logic.
+
+3. Silver Layer (Cleansed & Validated)
+Tables
+- main_nyctaxi.ref.trips_clean (typed and normalized)
+- main_nyctaxi.ref.trips_valid (contract-enforced)
+What they are
+ The Silver layer is the trust boundary. Data here has been cleaned, typed, and validated against explicit quality rules (for example, fare_amount >= 0).
+Verification
+ If these tables are missing
+- 02_dlt_pipeline.sql.ipynb did not execute successfully
+ - Review notebook execution output and errors (there is no DLT UI in Free Edition)
+
+If the tables exist but are empty:
+- A data-quality rule may have dropped all rows
+- There may be an upstream ingestion issue
+4. Gold Layer (Business Outputs)
+Gold output: main_nyctaxi.mart.daily_kpis
+What it is
+ A curated analytical output containing daily business metrics (e.g. total_revenue, revenue_per_mile).
+ In the Free Edition, this is created as a standard Delta table or view by running the SQL notebook manually. Automatic refresh via managed materialized views requires a paid Databricks tier.
+Verification: Run the queries in 03_gold_queries.sql.ipynb using the SQL Editor or a SQL Warehouse
+Troubleshooting
+- Empty or nonsensical results usually indicate:
+- All rows were dropped at the Silver layer due to contract violations, or
+- An upstream ingestion issue
+
+5. Observability
+If you run /monitoring/mlflow_demo.py, an MLflow run will be created containing basic pipeline health metrics such as silver_rows and counts of rows dropped due to data-quality rules. These metrics are derived from the tables and execution logs produced during the run and provide a minimal but useful signal for validating correctness and detecting regressions across executions.
+
+That is the end-to-end loop in one view: cataloged data, medallion tables, managed execution, queryable outputs, and a place to hang basic operational metrics.
+8. Validation Tests/Checks (and Why They Matter)
+A pipeline can "succeed" and still be wrong. Most real failures are silent: instead of hard execution errors, you get missing rows, duplicated data, schema drift, or downstream metrics that quietly become incorrect. Because of this, validation should be applied throughout the lakehouse workflow so issues are detected as early as possible. In this repo, checks are aligned to each stage of the medallion architecture.
+Bronze checks (did ingestion behave?)
+In Catalog Explorer, start at:
+main_nyctaxi.raw.taxi_bronze
+main_nyctaxi.raw.taxi_raw (if batch ingestion was used)
+
+Minimum checks at this stage focus on volume and shape:
+Row counts are non-zero and broadly sensible
+Expected columns exist with correct types
+Timestamps or partitions advance consistently between runs
+
+These checks confirm that ingestion is working correctly and producing usable Bronze data.
+Silver checks (did the contract boundary hold?)
+Inspect:
+main_nyctaxi.ref.trips_clean
+main_nyctaxi.ref.trips_valid
+
+Confirm that:
+Data-quality rules (for example, fare_amount >= 0) are enforced
+Invalid rows are excluded from trips_valid
+The resulting tables are non-empty
+
+In the Free Edition, this validation is done by inspecting table contents and notebook execution output rather than a managed DLT UI.
+Gold checks (did we compute stable business outputs?)
+Run:
+/sql/03_gold_queries.sql.ipynb against main_nyctaxi.mart.daily_kpis
+
+Focus on invariants rather than complex tests:
+Results are non-empty
+Dates are continuous
+KPI values fall within plausible bounds
+No duplicate rows are generated
+
+Cross-run monitoring (do we detect regressions over time?)
+If /monitoring/mlflow_demo.py is run:
+Silver row counts are logged to MLflow
+Counts of data-quality drops are logged per run
+
+This turns correctness into a time series, making it easier to detect volume drops, increased rejection rates, or unexpected KPI shifts after changes. For accurate dropped-row totals, aggregate drop-related metrics from the underlying event data rather than relying on event counts alone.
+9. Data Contracts (What They Are and How This Repo Enforces Them)
+A data contract is a defined set of rules specifying what values downstream tables are allowed to contain.
+Data contracts are an increasingly common concept you should know for Databricks and data engineering in general, so it's best we cover it here with a short primer. In a lakehouse pipeline, enforcing a contract at the Silver stage ensures the "clean" data layer is deterministic for all downstream consumers (Gold aggregations, dashboards, or ML models). Without explicit contracts, invalid records can slip through unnoticed and distort outputs.
+Databricks provides a native mechanism for data contracts in Delta Live Tables called expectations. Expectations let you define rules and specify actions on violations: you can log failures, drop invalid records, or fail the pipeline update when a rule is broken.
+Contract in this repo: Defined in /dlt/02_dlt_pipeline.sql (expectations in the Silver logic)
+Enforced rules (examples):
+- vendor_id must be non-null.
+- fare_amount must be >= 0.
+Enforced at: The Silver validated table main_nyctaxi.ref.trips_valid.
+
+Note (what happens to invalid rows)
+With ON VIOLATION DROP ROW, violating rows are not retained in trips_valid and are not directly queryable as "failed rows."
+If you want to retain invalid records, implement a quarantine table explicitly (for example, create main_nyctaxi.ref.trips_invalid from trips_clean using the inverse of your contract predicates), and keep trips_valid as the contract-enforced dataset.
+For auditing and metrics, read counts from logs/metrics rather than expecting rejected rows to be available automatically.
+
+Demonstrating a contract break
+(Use batch ingestion so you control the input files.)
+Inject a bad record
+
+Add a row where fare_amount = -5, or vendor_id = NULL, or both.
+
+2. Re-run ingestion
+Re-run /notebooks/01_copy_into_bronze.sql.ipynb so the bad row lands in main_nyctaxi.raw.taxi_raw.
+
+3. Re-run the Silver/Gold logic
+Re-run /dlt/02_dlt_pipeline.sql.ipynb to recompute trips_valid and downstream outputs.
+
+4. Verify enforcement
+Confirm the bad record does not appear in main_nyctaxi.ref.trips_valid.
+Compare counts between trips_clean and trips_valid to quantify what was rejected.
+
+Why this matters
+This is the trust boundary between layers. Bronze can be messy (raw landing), but Silver is where we enforce correctness (typed, cleaned, contract-valid). Gold can then assume Silver is reliable; no negative fares or missing vendor IDs, for example.
+Contracts also create an audit trail: expectation metrics quantify how much data was rejected and why. This provides operational guardrails , if the drop rate suddenly spikes, it is treated as a data incident to investigate, rather than a mysterious dashboard error.
+(Optional) Trending in MLflow
+The script /monitoring/mlflow_demo.py provides a minimal bridge from "pipeline ran" to "health is measurable".
+It logs silver_rows each run, and logs data-quality drop signals derived from execution logs. Over time, you can compare runs in the MLflow UI to detect regressions early, and you can extend the query above to aggregate drop metrics if you need exact dropped-row totals.
+10. Cost and Compute Control
+Using Databricks is not free, and as the scale increases, cost can become a primary constraint for an organization. A large part of using Databricks is figuring out how to lower total spend.
+Databricks usage is measured in Databricks Units (DBUs). DBUs accumulate while compute is running; how usage is metered and billed depends on the product and cloud. In addition to DBUs, your cloud provider charges for the underlying VMs, storage, and network.
+In practice, the main cost drivers are how long compute runs and which compute SKU you use.
+Typical compute types in a Databricks environment
+In a full Databricks setup, you might use:
+An all-purpose cluster running for 20 minutes at C DBU/hour (for example, 15 minutes for ingestion and 5 minutes for MLflow logging)
+A DLT pipeline compute running for 25 minutes at P DBU/hour
+A SQL warehouse running for 10 minutes at W DBU/hour
+
+The DBU consumption would be estimated as:
+Total DBUs = C * (20/60) + P * (25/60) + W * (10/60)
+Compute used in this tutorial (Free Edition)
+In this walkthrough, we use:
+An all-purpose cluster to run ingestion, transformation, and validation notebooks
+A Serverless Starter SQL Warehouse (2X-Small) to query Gold outputs
+
+As noted earlier, there is no managed DLT pipeline compute in the Free Edition. The DLT SQL logic is executed manually as standard Spark SQL workloads on a cluster, so there is no separate P term in practice.
+A Free Edition cost estimate therefore simplifies to:
+Total DBUs ≈ C × (runtime / 60) + W × (warehouse_runtime / 60)
+Note: C, P, and W are placeholders for the DBU rates of the all-purpose cluster, pipeline compute, and warehouse compute. Use your workspace's actual DBU rates/SKUs to compute the real cost in your currency.
+11. Next Steps / Possible Improvements
+This repo is intentionally minimal. To make it production-ready, you could extend it in the following areas:
+Stronger data contracts
+ Add additional expectations (value ranges, cross-field checks). Quarantine rejected rows for analysis instead of dropping them outright, and optionally configure critical rules to fail execution on violation.
+Automated quality checks and observability
+ Enforce row-count thresholds and maximum drop rates (for example, fail a run if Gold KPIs fall outside expected bounds). Log expectation failures and drop rates to MLflow or another metrics store for trend monitoring.
+Idempotency and backfills
+ Support parameterized reprocessing (for example, by date range) and ensure reruns do not duplicate data or introduce inconsistencies.
+Environment separation and deployment
+ Use separate development and production catalogs or schemas. Deploy pipelines via configuration and CI/CD (for example, Databricks Asset Bundles) instead of manual notebook execution.
+Cost and performance optimization
+ Partition and optimize Silver and Gold tables for query performance. Enforce aggressive auto-termination on clusters and SQL warehouses to avoid idle compute costs.
+
+12. Conclusion
+In this walkthrough, we built and ran an end-to-end lakehouse pipeline on Databricks using Delta Lake for storage, Apache Spark for compute, Unity Catalog for governance, and Delta Live Tables for managed transformations. Unity Catalog established a governed namespace; Spark executed workloads on Databricks Runtime; DLT handled incremental execution, data quality enforcement, and lifecycle management; and MLflow provided a minimal hook for monitoring correctness over time. Hopefully, you now come away with a basic understanding of how Databricks works and feel equipped to work on more complex projects.
+While this project runs without managed pipelines in the Free Edition, the structure and logic mirror a production Databricks deployment. The same SQL definitions can be deployed unchanged as a managed Lakeflow (DLT) pipeline in a paid workspace, with platform-managed orchestration, incremental execution, and operational monitoring.
+At this point, you should have a concrete mental model of how Databricks components fit together in practice and how a real lakehouse pipeline is structured from raw ingestion through curated business outputs.
+If you want to explore the code, follow future work, or discuss building similar pipelines, you can find me here:
+GitHub: https://github.com/thejasono
+LinkedIn: https://www.linkedin.com/in/thejasonowens/
+Email: thisisjasonowens@gmail.com
+(available for freelance, contract, full-time roles, and consultation)
+
+#DataEngineering #Databricks #Spark #Lakehouse #UnityCatalog
