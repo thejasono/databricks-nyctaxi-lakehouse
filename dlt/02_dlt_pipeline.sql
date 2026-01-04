@@ -1,5 +1,5 @@
 -- Databricks notebook source
-GRANT ALL PRIVILEGES ON SCHEMA main_nyctaxi.raw TO `thisisjasonowens@gmail.com`;
+GRANT ALL PRIVILEGES ON SCHEMA main_nyctaxi.raw TO `enter_your_email_address_here`;
 -- change the email to your own databricks account email
 
 -- COMMAND ----------
