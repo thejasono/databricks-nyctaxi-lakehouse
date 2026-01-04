@@ -1,10 +1,12 @@
 %python
+import os
 import mlflow
 from pyspark.sql import functions as F
 from datetime import datetime
 
 mlflow.set_registry_uri("databricks")
 mlflow.set_experiment("/Shared/nyctaxi-pipeline")
+PIPELINE_EVENT_LOG_TABLE = os.getenv("PIPELINE_EVENT_LOG_TABLE", "main_nyctaxi.system.event_log")
 
 with mlflow.start_run(run_name="dlt_kpis"):
     df = spark.table("main_nyctaxi.ref.trips_valid")
@@ -23,6 +25,16 @@ with mlflow.start_run(run_name="dlt_kpis"):
     null_pickup_zip = df.filter(F.col("pickup_zip").isNull()).count()
     mlflow.log_metric("null_pickup_zip", null_pickup_zip)
     print(f"Logged null_pickup_zip: {null_pickup_zip}")
+    
+    # Log count of data-quality drop events from the pipeline event log
+    drop_events = (
+        spark.table(PIPELINE_EVENT_LOG_TABLE)
+        .filter(F.col("event_type") == "data_quality")
+        .filter(F.col("details:expectation:action") == "drop")
+        .count()
+    )
+    mlflow.log_metric("data_quality_drop_events", drop_events)
+    print(f"Logged data_quality_drop_events: {drop_events}")
     
     # Log pipeline context parameters
     mlflow.log_param("pipeline_name", "NYCTaxi-Lakeflow")
